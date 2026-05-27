@@ -74,6 +74,11 @@
             <span class="nav-spacer" v-if="!sidebarCollapsed"></span>
             <span v-if="!sidebarCollapsed">报告编制</span>
           </router-link>
+          <router-link to="/doc-editor" class="nav-item" active-class="active">
+            <el-icon><EditPen /></el-icon>
+            <span class="nav-spacer" v-if="!sidebarCollapsed"></span>
+            <span v-if="!sidebarCollapsed">文档编辑</span>
+          </router-link>
           <router-link to="/review" class="nav-item" active-class="active">
             <el-icon><Check /></el-icon>
             <span class="nav-spacer" v-if="!sidebarCollapsed"></span>

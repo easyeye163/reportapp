@@ -24,6 +24,7 @@
       <div class="header-actions">
         <el-button @click="saveReport" class="action-button" :loading="saving"><el-icon><Folder /></el-icon>保存</el-button>
         <el-button type="primary" plain class="action-button" @click="previewReport"><el-icon><View /></el-icon>预览</el-button>
+        <el-button type="success" plain class="action-button" @click="openDocEditor"><el-icon><EditPen /></el-icon>文档编辑</el-button>
         <el-button type="primary" class="action-button submit-button" @click="openSubmitModal" :disabled="reportInfo.status !== 'draft' && reportInfo.status !== 'revise'"><el-icon><Promotion /></el-icon>提交审核</el-button>
       </div>
     </div>
@@ -503,6 +504,15 @@ watch(() => route.query.id, (newId, oldId) => {
     loadReport()
   }
 })
+
+
+const openDocEditor = () => {
+  if (!reportInfo.value.id) {
+    ElMessage.warning('请先保存报告')
+    return
+  }
+  router.push({ path: '/doc-editor', query: { id: String(reportInfo.value.id) } })
+}
 
 onMounted(() => {
   if (route.query.id) {

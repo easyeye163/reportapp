@@ -27,6 +27,7 @@ async function start() {
   const backupRoutes = require('./routes/backups');
   const notificationRoutes = require('./routes/notifications');
   const settingsRoutes = require('./routes/settings');
+  const onlyofficeRoutes = require('./routes/onlyoffice');
   const logsRoutes = require('./routes/logs');
 
   app.use('/api/auth', authRoutes);
@@ -40,6 +41,7 @@ async function start() {
   app.use('/api/backups', backupRoutes);
   app.use('/api/notifications', notificationRoutes.router);
   app.use('/api/settings', settingsRoutes);
+  app.use('/api/onlyoffice', onlyofficeRoutes);
   app.use('/api/logs', logsRoutes.router);
 
   app.get('/api/health', (req, res) => {
