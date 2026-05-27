@@ -54,10 +54,11 @@ router.get('/', (req, res) => {
   }
 });
 
-// GET /api/archives/:id/download — download archive (export report data)
-router.get('/:id/download', (req, res) => {
+// GET /api/archives/:id/download — download archive as DOCX/PDF/JSON
+router.get('/:id/download', async (req, res) => {
   try {
     const { id } = req.params;
+    const { format = 'docx' } = req.query;
     const db = getDatabase();
 
     const report = db.prepare(`
@@ -91,10 +92,26 @@ router.get('/:id/download', (req, res) => {
       archived_at: new Date().toISOString()
     };
 
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Content-Disposition', `attachment; filename="archive-${report.code}.json"`);
+    if (format === 'json') {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="archive-${report.code}.json"`);
+      return res.json({ success: true, data: archiveData });
+    }
 
-    res.json({ success: true, data: archiveData });
+    if (format === 'pdf') {
+      const { generatePDF } = require('../utils/export');
+      const pdfBuffer = await generatePDF(archiveData);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="archive-${report.code}.pdf"`);
+      return res.send(pdfBuffer);
+    }
+
+    // 默认导出 DOCX
+    const { generateDOCX } = require('../utils/export');
+    const docxBuffer = await generateDOCX(archiveData);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="archive-${report.code}.docx"`);
+    return res.send(docxBuffer);
   } catch (err) {
     console.error('Download archive error:', err);
     res.status(500).json({ success: false, error: '下载归档失败' });

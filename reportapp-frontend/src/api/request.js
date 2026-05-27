@@ -23,6 +23,10 @@ request.interceptors.request.use(
 // 响应拦截器：处理错误
 request.interceptors.response.use(
   (response) => {
+    // blob 类型响应（文件下载/导出）直接透传，不做 JSON 解析
+    if (response.config.responseType === 'blob') {
+      return response.data
+    }
     const res = response.data
     if (res.success === false) {
       ElMessage.error(res.error || '请求失败')
@@ -32,6 +36,20 @@ request.interceptors.response.use(
   },
   (error) => {
     if (error.response) {
+      // blob 响应的错误需要解析 JSON
+      if (error.response.config?.responseType === 'blob') {
+        const reader = new FileReader()
+        reader.onload = () => {
+          try {
+            const errData = JSON.parse(reader.result)
+            ElMessage.error(errData.error || '请求失败')
+          } catch {
+            ElMessage.error('请求失败')
+          }
+        }
+        reader.readAsText(error.response.data)
+        return Promise.reject(error)
+      }
       const status = error.response.status
       if (status === 401) {
         ElMessage.error('登录已过期，请重新登录')

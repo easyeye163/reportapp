@@ -15,7 +15,7 @@ export function createCase(formData) {
 }
 
 export function deleteCase(id) {
-  return request.delete(`/cases/${id}`)
+  return request.delete(`/cases/cases/${id}`)
 }
 
 export function getStandards(params) {

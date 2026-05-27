@@ -4,6 +4,6 @@ export function getArchives(params) {
   return request.get('/archives', { params })
 }
 
-export function downloadArchive(id) {
-  return request.get(`/archives/${id}/download`, { responseType: 'blob' })
+export function downloadArchive(id, format = 'docx') {
+  return request.get(`/archives/${id}/download`, { params: { format }, responseType: 'blob' })
 }

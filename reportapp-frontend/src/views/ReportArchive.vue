@@ -89,12 +89,11 @@ const viewReport = (report: any) => { router.push({ path: '/report-edit', query:
 
 const downloadReport = async (report: any) => {
   try {
-    const res: any = await downloadArchive(report.id)
-    const blob = new Blob([res], { type: 'application/octet-stream' })
+    const blob = await downloadArchive(report.id, 'docx')
     const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `${report.name || 'archive'}.zip`
+    link.download = `${report.name || report.code || 'archive'}.docx`
     link.click()
     window.URL.revokeObjectURL(url)
     ElMessage.success('报告下载成功')

@@ -178,7 +178,7 @@
             class="upload-demo"
             action="#"
             :auto-upload="false"
-            :on-change="handleFileChange('signature')"
+            :on-change="handleSignatureChange"
             :file-list="userForm.signature"
             accept=".jpg,.jpeg,.png"
             :limit="1"
@@ -197,7 +197,7 @@
             class="upload-demo"
             action="#"
             :auto-upload="false"
-            :on-change="handleFileChange('seal')"
+            :on-change="handleSealChange"
             :file-list="userForm.seal"
             accept=".jpg,.jpeg,.png"
             :limit="1"
@@ -254,6 +254,11 @@
       width="600px"
     >
       <el-form :model="roleForm" label-width="100px">
+        <el-form-item label="选择角色">
+          <el-select v-model="selectedRoleId" placeholder="请选择角色" @change="onRoleSelect" style="width: 100%">
+            <el-option v-for="role in rolesList" :key="role.id" :label="role.name + ' — ' + (role.description || '')" :value="role.id" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="角色名称">
           <el-input v-model="roleForm.name" placeholder="请输入角色名称" />
         </el-form-item>
@@ -309,7 +314,46 @@ const editForm = ref({ id: 0, name: '', role: '' })
 
 // 角色管理模态框
 const roleManagementModalVisible = ref(false)
-const roleForm = ref({ name: '', description: '', permissions: [] as string[] })
+const roleForm = ref({ id: 0, name: '', description: '', permissions: [] as string[] })
+const rolesList = ref<any[]>([])
+const selectedRoleId = ref(0)
+
+const loadRoles = async () => {
+  try {
+    const res: any = await getRoles()
+    rolesList.value = res.data || []
+  } catch (e) { /* handled */ }
+}
+
+const openRoleManagementModal = async () => {
+  await loadRoles()
+  if (rolesList.value.length > 0) {
+    const firstRole = rolesList.value[0]
+    selectedRoleId.value = firstRole.id
+    roleForm.value = { id: firstRole.id, name: firstRole.name, description: firstRole.description || '', permissions: firstRole.permissions || [] }
+  } else {
+    roleForm.value = { id: 0, name: '', description: '', permissions: [] }
+  }
+  roleManagementModalVisible.value = true
+}
+
+const onRoleSelect = (roleId: number) => {
+  const role = rolesList.value.find((r: any) => r.id === roleId)
+  if (role) {
+    selectedRoleId.value = role.id
+    roleForm.value = { id: role.id, name: role.name, description: role.description || '', permissions: role.permissions || [] }
+  }
+}
+
+const submitRoleManagement = async () => {
+  if (!roleForm.value.id) { ElMessage.warning('请先选择角色'); return }
+  if (!roleForm.value.name) { ElMessage.warning('请输入角色名称'); return }
+  try {
+    await updateRole(roleForm.value.id, { name: roleForm.value.name, description: roleForm.value.description, permissions: roleForm.value.permissions })
+    ElMessage.success('角色设置已保存')
+    roleManagementModalVisible.value = false
+  } catch (e) { /* handled */ }
+}
 
 // 角色计数
 const roleCounts = computed(() => ({
@@ -342,15 +386,9 @@ const openAddUserModal = () => {
   userForm.value = { name: '', phone: '', password: '', role: '', signature: [], seal: [] }
   addUserModalVisible.value = true
 }
-const openRoleManagementModal = () => {
-  roleForm.value = { name: '', description: '', permissions: [] }
-  roleManagementModalVisible.value = true
-}
 const handleRoleChange = () => { if (userForm.value.role !== 'chief') userForm.value.seal = [] }
-const handleFileChange = (type: string, file: any) => {
-  if (type === 'signature') userForm.value.signature = [file]
-  else if (type === 'seal') userForm.value.seal = [file]
-}
+const handleSignatureChange = (file: any) => { userForm.value.signature = [file] }
+const handleSealChange = (file: any) => { userForm.value.seal = [file] }
 
 const submitAddUser = async () => {
   if (!userForm.value.name) { ElMessage.warning('请输入用户名'); return }
@@ -397,12 +435,7 @@ const deleteUser = (user: any) => {
     }).catch(() => {})
 }
 
-const submitRoleManagement = async () => {
-  if (!roleForm.value.name) { ElMessage.warning('请输入角色名称'); return }
-  try { await updateRole(0, roleForm.value); ElMessage.success('角色设置已保存'); roleManagementModalVisible.value = false } catch (e) { /* handled */ }
-}
-
-onMounted(() => { loadUsers() })
+onMounted(() => { loadUsers(); loadRoles() })
 </script>
 
 <style scoped lang="scss">

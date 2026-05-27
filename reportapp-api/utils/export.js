@@ -12,16 +12,65 @@ const REPORT_TYPE_NAMES = {
 };
 
 function getChineseFontPath() {
+  // Windows 字体路径
   const windowsFonts = 'C:/Windows/Fonts';
-  const fontCandidates = ['simhei.ttf', 'NotoSansSC-VF.ttf', 'NotoSerifSC-VF.ttf', 'simkai.ttf', 'simsunb.ttf'];
-  
-  for (const font of fontCandidates) {
-    const fontPath = path.join(windowsFonts, font);
-    if (fs.existsSync(fontPath)) {
-      return fontPath;
+  // Linux 常见中文字体路径
+  const linuxFontDirs = [
+    '/usr/share/fonts',
+    '/usr/share/fonts/truetype',
+    '/usr/share/fonts/opentype',
+    '/usr/local/share/fonts',
+    path.join(process.env.HOME || '/root', '.fonts')
+  ];
+
+  const fontCandidates = [
+    // Windows
+    { dir: windowsFonts, names: ['simhei.ttf', 'NotoSansSC-VF.ttf', 'NotoSerifSC-VF.ttf', 'simkai.ttf', 'simsunb.ttf', 'msyh.ttc'] },
+    // Linux
+    ...linuxFontDirs.map(d => ({
+      dir: d,
+      names: [
+        'noto/NotoSansSC-Regular.ttf',
+        'NotoSansSC-Regular.ttf',
+        'NotoSansSC-VF.ttf',
+        'truetype/noto/NotoSansSC-Regular.ttf',
+        'opentype/noto/NotoSansSC-Regular.ttf',
+        'wqy/wqy-zenhei.ttc',
+        'wqy/wqy-microhei.ttc',
+        'droid/DroidSansFallbackFull.ttf',
+        'arphic/uming.ttc',
+        'simhei.ttf',
+        'SimHei.ttf'
+      ]
+    }))
+  ];
+
+  for (const candidate of fontCandidates) {
+    for (const font of candidate.names) {
+      const fontPath = path.join(candidate.dir, font);
+      if (fs.existsSync(fontPath)) {
+        return fontPath;
+      }
     }
   }
-  
+
+  // 尝试递归搜索 Linux 字体目录
+  for (const fontDir of linuxFontDirs) {
+    if (!fs.existsSync(fontDir)) continue;
+    try {
+      const files = fs.readdirSync(fontDir, { withFileTypes: true });
+      for (const file of files) {
+        if (file.isFile() && /\.(ttf|ttc|otf)$/i.test(file.name)) {
+          const fullPath = path.join(fontDir, file.name);
+          // 简单判断文件名是否包含中文相关关键词
+          if (/noto.*sc|simhei|simsun|msyh|wqy|droid|arphic|cjk|chinese/i.test(file.name)) {
+            return fullPath;
+          }
+        }
+      }
+    } catch (e) { /* ignore permission errors */ }
+  }
+
   return null;
 }
 
@@ -33,9 +82,17 @@ function generatePDF(reportData, options = {}) {
   doc.on('data', chunk => chunks.push(chunk));
 
   const chineseFont = getChineseFontPath();
+  let hasChineseFont = false;
   if (chineseFont) {
-    doc.registerFont('Chinese', chineseFont);
-    doc.font('Chinese');
+    try {
+      doc.registerFont('Chinese', chineseFont);
+      doc.font('Chinese');
+      hasChineseFont = true;
+    } catch (e) {
+      console.warn('Failed to register Chinese font:', e.message);
+    }
+  } else {
+    console.warn('No Chinese font found. PDF may not display Chinese characters correctly. Install fonts: apt-get install fonts-noto-cjk');
   }
 
   const content = reportData.content || {};
