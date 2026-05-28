@@ -188,7 +188,58 @@ router.get('/status', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/onlyoffice/test-doc
+ * 提供测试文档（用于验证 OnlyOffice 连接）
+ */
+router.get('/test-doc', (req, res) => {
+  const testDocPath = path.join(__dirname, '..', 'uploads', 'onlyoffice', 'test.docx');
+  
+  if (fs.existsSync(testDocPath)) {
+    return res.sendFile(path.resolve(testDocPath));
+  }
+
+  // 生成测试文档
+  generateTestDocx(testDocPath).then(() => {
+    res.sendFile(path.resolve(testDocPath));
+  }).catch(err => {
+    console.error('Generate test docx error:', err);
+    res.status(500).json({ success: false, error: '生成测试文档失败' });
+  });
+});
+
 // ========== 辅助函数 ==========
+
+async function generateTestDocx(docPath) {
+  const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } = require('docx');
+
+  const doc = new Document({
+    sections: [{
+      properties: {},
+      children: [
+        new Paragraph({
+          text: '测试文档',
+          heading: HeadingLevel.TITLE,
+          alignment: AlignmentType.CENTER,
+          spacing: { after: 300 }
+        }),
+        new Paragraph({
+          children: [new TextRun({ text: '这是一个 OnlyOffice 编辑器测试文档。', size: 24 })],
+          spacing: { after: 200 }
+        }),
+        new Paragraph({
+          children: [new TextRun({ text: '您可以在此编辑内容，验证 OnlyOffice 是否正常工作。', size: 24 })],
+          spacing: { after: 200 }
+        })
+      ]
+    }]
+  });
+
+  const buffer = await Packer.toBuffer(doc);
+  const dir = path.dirname(docPath);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(docPath, buffer);
+}
 
 function getDocPath(report) {
   const uploadDir = path.join(__dirname, '..', 'uploads', 'onlyoffice');
