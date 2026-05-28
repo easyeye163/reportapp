@@ -75,9 +75,8 @@ const init = async () => {
       },
       documentType: 'word',
       editorConfig: {
-        callbackUrl: 'https://zhangshuxia.ltd:8443/api/onlyoffice/callback',
         user: { id: 'test', name: '测试用户' },
-        customization: { autosave: true, chat: false, forcesave: true },
+        customization: { autosave: false, chat: false, forcesave: false },
         lang: 'zh-CN',
         mode: 'edit'
       },
