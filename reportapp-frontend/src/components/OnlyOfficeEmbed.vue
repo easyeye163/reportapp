@@ -64,8 +64,26 @@ const init = async () => {
 
   // 2. Load editor config
   try {
-    const res: any = await request.get(`/onlyoffice/config/${props.reportId}`)
-    const { config, documentServerUrl } = res.data
+    const documentServerUrl = 'http://192.168.137.148:8088'
+    const config = {
+      document: {
+        fileType: 'docx',
+        key: 'test-' + Date.now(),
+        title: '测试文档.docx',
+        url: 'https://zhangshuxia.ltd:8443/AROOT/111.docx',
+        permissions: { comment: true, download: true, edit: true, fillForms: true, print: true, review: true }
+      },
+      documentType: 'word',
+      editorConfig: {
+        callbackUrl: 'https://zhangshuxia.ltd:8443/api/onlyoffice/callback',
+        user: { id: 'test', name: '测试用户' },
+        customization: { autosave: true, chat: false, forcesave: true },
+        lang: 'zh-CN',
+        mode: 'edit'
+      },
+      height: '100%',
+      width: '100%'
+    }
 
     // 3. Load OnlyOffice API script
     await loadScript(`${documentServerUrl}/web-apps/apps/api/documents/api.js`)
