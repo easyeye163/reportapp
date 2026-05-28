@@ -13,13 +13,20 @@
             <template #header>
               <div class="flex justify-between items-center">
                 <h3 class="font-medium">{{ guide.name }}</h3>
-                <el-tag type="info" size="small">{{ guide.type || '指南' }}</el-tag>
+                <div>
+                  <el-tag type="info" size="small" style="margin-right: 4px">{{ guide.type || '指南' }}</el-tag>
+                  <el-tag type="success" size="small">v{{ guide.version || 1 }}</el-tag>
+                </div>
               </div>
             </template>
             <p class="text-gray-600 text-sm mb-4">{{ guide.description }}</p>
             <div class="flex justify-between text-xs text-gray-500 mb-4">
-              <span>{{ guide.uploader || guide.creator }}</span>
-              <span>{{ guide.createDate || guide.uploadDate }}</span>
+              <span>{{ guide.uploader_name || guide.uploader || '未知' }}</span>
+              <span>{{ guide.created_at || guide.createDate || '' }}</span>
+            </div>
+            <div class="guide-actions">
+              <el-button size="small" type="primary" @click="downloadGuide(guide)"><el-icon><Download /></el-icon>下载</el-button>
+              <el-button size="small" @click="viewVersions(guide)"><el-icon><Clock /></el-icon>历史版本</el-button>
             </div>
           </el-card>
         </el-col>
@@ -76,6 +83,26 @@
       </el-tabs>
     </div>
 
+    <!-- 版本历史弹窗 -->
+    <el-dialog v-model="versionModalVisible" title="版本历史" width="600px">
+      <el-table :data="versionList" style="width: 100%">
+        <el-table-column prop="version" label="版本" width="80">
+          <template #default="scope"><el-tag type="success">v{{ scope.row.version }}</el-tag></template>
+        </el-table-column>
+        <el-table-column prop="description" label="说明" min-width="200" />
+        <el-table-column prop="uploader_name" label="上传者" width="100" />
+        <el-table-column prop="created_at" label="上传时间" width="160" />
+        <el-table-column label="操作" width="100">
+          <template #default="scope">
+            <el-button size="small" type="primary" @click="downloadGuide(scope.row)">下载</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <el-button @click="versionModalVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 上传指南文件模态框 -->
     <el-dialog v-model="uploadModalVisible" title="上传指南文件" width="500px">
       <el-form :model="uploadForm" label-width="80px">
@@ -107,9 +134,10 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { Upload } from '@element-plus/icons-vue'
+import { Upload, Download, Clock } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { getGuides, createGuide } from '../api/guides'
+import request from '../api/request'
 
 const loading = ref(false)
 const submitting = ref(false)
@@ -118,6 +146,10 @@ const guides = ref<any[]>([])
 const uploadModalVisible = ref(false)
 const uploadForm = ref({ name: '', type: '', description: '' })
 const fileList = ref<any[]>([])
+
+// 版本历史
+const versionModalVisible = ref(false)
+const versionList = ref<any[]>([])
 
 const loadGuides = async () => {
   loading.value = true
@@ -142,6 +174,36 @@ const submitUpload = async () => {
     uploadModalVisible.value = false
     loadGuides()
   } catch (e) {} finally { submitting.value = false }
+}
+
+const downloadGuide = async (guide: any) => {
+  try {
+    const token = localStorage.getItem('token')
+    const res = await request.get(`/guides/${guide.id}/download`, {
+      responseType: 'blob',
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    const blob = new Blob([res])
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${guide.name}_v${guide.version || 1}`
+    link.click()
+    window.URL.revokeObjectURL(url)
+    ElMessage.success('下载成功')
+  } catch (e) {
+    ElMessage.error('下载失败')
+  }
+}
+
+const viewVersions = async (guide: any) => {
+  try {
+    const res: any = await request.get(`/guides/${guide.id}/versions`)
+    versionList.value = res.data || []
+    versionModalVisible.value = true
+  } catch (e) {
+    ElMessage.error('获取版本历史失败')
+  }
 }
 
 onMounted(() => { loadGuides() })

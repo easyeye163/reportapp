@@ -37,6 +37,9 @@ const uploadStandard = multer({ storage: standardStorage, limits: { fileSize: 10
 router.use(authMiddleware);
 
 // ===== CASES =====
+// 注意：带 :id 参数的路由必须定义在不带参数的路由之后，
+// 但 /cases/:id 和 /standards/:id 使用不同的路径前缀，不会冲突。
+// 关键修复：将 /cases/:id 和 /cases/:id/download 提前到 /standards 路由之前。
 
 // GET /api/cases
 router.get('/cases', (req, res) => {
@@ -106,6 +109,65 @@ router.post('/cases', uploadCase.single('file'), (req, res) => {
   } catch (err) {
     console.error('Create case error:', err);
     res.status(500).json({ success: false, error: '创建案例失败' });
+  }
+});
+
+// GET /api/cases/:id — get case detail for preview（必须在 DELETE /cases/:id 之前）
+router.get('/cases/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const db = getDatabase();
+
+    const caseItem = db.prepare(`
+      SELECT c.*, u.name as uploader_name
+      FROM cases c
+      LEFT JOIN users u ON c.uploader_id = u.id
+      WHERE c.id = ?
+    `).get(id);
+
+    if (!caseItem) {
+      return res.status(404).json({ success: false, error: '案例不存在' });
+    }
+
+    res.json({ success: true, data: caseItem });
+  } catch (err) {
+    console.error('Get case detail error:', err);
+    res.status(500).json({ success: false, error: '获取案例详情失败' });
+  }
+});
+
+// GET /api/cases/:id/download — download case file
+router.get('/cases/:id/download', (req, res) => {
+  try {
+    const { id } = req.params;
+    const db = getDatabase();
+
+    const caseItem = db.prepare('SELECT * FROM cases WHERE id = ?').get(id);
+    if (!caseItem) {
+      return res.status(404).json({ success: false, error: '案例不存在' });
+    }
+
+    if (!caseItem.file_path || !fs.existsSync(caseItem.file_path)) {
+      return res.status(404).json({ success: false, error: '该案例暂无上传文件，无法下载' });
+    }
+
+    const ext = path.extname(caseItem.file_path);
+    const mimeType = {
+      '.pdf': 'application/pdf',
+      '.doc': 'application/msword',
+      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      '.xls': 'application/vnd.ms-excel',
+      '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      '.zip': 'application/zip',
+      '.rar': 'application/x-rar-compressed'
+    };
+
+    res.setHeader('Content-Type', mimeType[ext] || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(caseItem.name + ext)}"`);
+    res.sendFile(path.resolve(caseItem.file_path));
+  } catch (err) {
+    console.error('Download case error:', err);
+    res.status(500).json({ success: false, error: '下载案例失败' });
   }
 });
 
@@ -263,65 +325,6 @@ router.delete('/standards/:id', (req, res) => {
   }
 });
 
-// GET /api/cases/:id — get case detail for preview
-router.get('/cases/:id', (req, res) => {
-  try {
-    const { id } = req.params;
-    const db = getDatabase();
-
-    const caseItem = db.prepare(`
-      SELECT c.*, u.name as uploader_name
-      FROM cases c
-      LEFT JOIN users u ON c.uploader_id = u.id
-      WHERE c.id = ?
-    `).get(id);
-
-    if (!caseItem) {
-      return res.status(404).json({ success: false, error: '案例不存在' });
-    }
-
-    res.json({ success: true, data: caseItem });
-  } catch (err) {
-    console.error('Get case detail error:', err);
-    res.status(500).json({ success: false, error: '获取案例详情失败' });
-  }
-});
-
-// GET /api/cases/:id/download — download case file
-router.get('/cases/:id/download', (req, res) => {
-  try {
-    const { id } = req.params;
-    const db = getDatabase();
-
-    const caseItem = db.prepare('SELECT * FROM cases WHERE id = ?').get(id);
-    if (!caseItem) {
-      return res.status(404).json({ success: false, error: '案例不存在' });
-    }
-
-    if (!caseItem.file_path || !fs.existsSync(caseItem.file_path)) {
-      return res.status(404).json({ success: false, error: '文件不存在' });
-    }
-
-    const ext = path.extname(caseItem.file_path);
-    const mimeType = {
-      '.pdf': 'application/pdf',
-      '.doc': 'application/msword',
-      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      '.xls': 'application/vnd.ms-excel',
-      '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      '.zip': 'application/zip',
-      '.rar': 'application/x-rar-compressed'
-    };
-
-    res.setHeader('Content-Type', mimeType[ext] || 'application/octet-stream');
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(caseItem.name + ext)}"`);
-    res.sendFile(path.resolve(caseItem.file_path));
-  } catch (err) {
-    console.error('Download case error:', err);
-    res.status(500).json({ success: false, error: '下载案例失败' });
-  }
-});
-
 // GET /api/standards/:id — get standard detail for preview
 router.get('/standards/:id', (req, res) => {
   try {
@@ -358,7 +361,7 @@ router.get('/standards/:id/download', (req, res) => {
     }
 
     if (!standard.file_path || !fs.existsSync(standard.file_path)) {
-      return res.status(404).json({ success: false, error: '文件不存在' });
+      return res.status(404).json({ success: false, error: '该标准暂无上传文件，无法下载' });
     }
 
     const ext = path.extname(standard.file_path);

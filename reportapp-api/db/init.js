@@ -1,6 +1,7 @@
 const { initDatabase } = require('./database');
 const { getDatabase } = require('./database');
 const bcrypt = require('bcryptjs');
+const fs = require('fs');
 
 async function initDB() {
   await initDatabase();
@@ -145,6 +146,8 @@ async function initDB() {
       file_path TEXT,
       description TEXT,
       uploader_id INTEGER,
+      version INTEGER DEFAULT 1,
+      is_current INTEGER DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (uploader_id) REFERENCES users(id)
     );
@@ -219,6 +222,23 @@ async function initDB() {
   `);
 
   console.log('Tables created successfully.');
+
+  // 迁移：为已有 guides 表添加 version 和 is_current 字段（如果不存在）
+  try {
+    const guideColumns = db.prepare("PRAGMA table_info(guides)").all();
+    const hasVersion = guideColumns.some(c => c.name === 'version');
+    const hasIsCurrent = guideColumns.some(c => c.name === 'is_current');
+    if (!hasVersion) {
+      db.exec('ALTER TABLE guides ADD COLUMN version INTEGER DEFAULT 1');
+      console.log('Migrated: added version column to guides');
+    }
+    if (!hasIsCurrent) {
+      db.exec('ALTER TABLE guides ADD COLUMN is_current INTEGER DEFAULT 1');
+      console.log('Migrated: added is_current column to guides');
+    }
+  } catch (e) {
+    console.warn('Guide table migration skipped:', e.message);
+  }
 
   seedData(db);
 }
@@ -347,14 +367,46 @@ function seedData(db) {
   });
   insertManyReviews(reviews);
 
+  // 创建示例文件目录
+  const caseUploadDir = require('path').join(__dirname, '..', 'uploads', 'cases');
+  const standardUploadDir = require('path').join(__dirname, '..', 'uploads', 'standards');
+  if (!fs.existsSync(caseUploadDir)) fs.mkdirSync(caseUploadDir, { recursive: true });
+  if (!fs.existsSync(standardUploadDir)) fs.mkdirSync(standardUploadDir, { recursive: true });
+
+  // 创建示例案例文件（简单的文本文件，用于演示预览/下载功能）
+  const sampleCases = [
+    { name: '厦门港船舶年检案例_sample.txt', content: '厦门港船舶年度检验报告案例\n\n本案例为厦门港某货船年度检验报告的示例文件。\n检验内容包括船体结构、轮机设备、电气设备等。\n\n编制单位：福建港航检验中心\n编制日期：2026年1月' },
+    { name: '福州港泊位检测案例_sample.txt', content: '福州港泊位结构检测报告案例\n\n本案例为福州港#3泊位结构检测报告的示例文件。\n检测内容包括泊位结构安全性、承载能力等。\n\n编制单位：福建港航检验中心\n编制日期：2026年2月' },
+    { name: '闽江航道测量案例_sample.txt', content: '闽江航道通航条件测量案例\n\n本案例为闽江航道福州段通航条件测量的示例文件。\n测量内容包括航道水深、宽度、通航净高等。\n\n编制单位：福建港航测量队\n编制日期：2026年3月' }
+  ];
+
+  const sampleStandards = [
+    { name: '船舶检验规范_sample.txt', content: '船舶检验规范 GB/T 35214\n\n本文件为船舶检验通用技术规范的摘要说明。\n\n适用范围：各类船舶年度检验、特别检验\n\n主要技术内容：\n1. 船体结构检验标准\n2. 轮机设备检验标准\n3. 电气设备检验标准\n4. 安全设备检验标准' },
+    { name: '港口工程质量标准_sample.txt', content: '港口工程质量检验标准 JTS 257\n\n本文件为港口工程质量检验评定标准的摘要说明。\n\n适用范围：港口码头、泊位、防波堤等工程\n\n主要内容：\n1. 混凝土结构质量标准\n2. 钢结构质量标准\n3. 地基基础质量标准\n4. 附属设施质量标准' },
+    { name: '福建省航道管理条例_sample.txt', content: '福建省航道管理条例\n\n本文件为福建省航道管理相关法规的摘要。\n\n主要内容：\n1. 航道规划与建设\n2. 航道养护与保护\n3. 航道通行管理\n4. 法律责任' }
+  ];
+
+  // 写入示例文件
+  const caseFilePaths = sampleCases.map((f, i) => {
+    const filePath = require('path').join(caseUploadDir, `seed_case_${i + 1}.txt`);
+    fs.writeFileSync(filePath, f.content, 'utf-8');
+    return filePath.replace(/\\/g, '/');
+  });
+
+  const standardFilePaths = sampleStandards.map((f, i) => {
+    const filePath = require('path').join(standardUploadDir, `seed_standard_${i + 1}.txt`);
+    fs.writeFileSync(filePath, f.content, 'utf-8');
+    return filePath.replace(/\\/g, '/');
+  });
+
   const insertCase = db.prepare(`
     INSERT INTO cases (name, business_type, uploader_id, file_path, status, description) VALUES (?, ?, ?, ?, ?, ?)
   `);
 
   const cases = [
-    { name: '厦门港船舶年检案例', business_type: '船舶报告', uploader_id: 1, file_path: null, status: '现行', description: '厦门港船舶年度检验报告案例' },
-    { name: '福州港泊位检测案例', business_type: '港口报告', uploader_id: 1, file_path: null, status: '现行', description: '福州港泊位结构检测报告案例' },
-    { name: '闽江航道测量案例', business_type: '航道报告', uploader_id: 2, file_path: null, status: '作废', description: '闽江航道通航条件测量案例' }
+    { name: '厦门港船舶年检案例', business_type: '船舶报告', uploader_id: 1, file_path: caseFilePaths[0], status: '现行', description: '厦门港船舶年度检验报告案例' },
+    { name: '福州港泊位检测案例', business_type: '港口报告', uploader_id: 1, file_path: caseFilePaths[1], status: '现行', description: '福州港泊位结构检测报告案例' },
+    { name: '闽江航道测量案例', business_type: '航道报告', uploader_id: 2, file_path: caseFilePaths[2], status: '作废', description: '闽江航道通航条件测量案例' }
   ];
 
   const insertManyCases = db.transaction((items) => {
@@ -369,9 +421,9 @@ function seedData(db) {
   `);
 
   const standards = [
-    { name: '船舶检验规范 GB/T 35214', standard_type: '国家标准', uploader_id: 1, file_path: null, status: '现行', description: '船舶检验通用技术规范' },
-    { name: '港口工程质量检验标准 JTS 257', standard_type: '行业标准', uploader_id: 1, file_path: null, status: '现行', description: '港口工程质量检验评定标准' },
-    { name: '福建省航道管理条例', standard_type: '地方标准', uploader_id: 3, file_path: null, status: '现行', description: '福建省航道管理相关法规' }
+    { name: '船舶检验规范 GB/T 35214', standard_type: '国家标准', uploader_id: 1, file_path: standardFilePaths[0], status: '现行', description: '船舶检验通用技术规范' },
+    { name: '港口工程质量检验标准 JTS 257', standard_type: '行业标准', uploader_id: 1, file_path: standardFilePaths[1], status: '现行', description: '港口工程质量检验评定标准' },
+    { name: '福建省航道管理条例', standard_type: '地方标准', uploader_id: 3, file_path: standardFilePaths[2], status: '现行', description: '福建省航道管理相关法规' }
   ];
 
   const insertManyStandards = db.transaction((items) => {
@@ -392,8 +444,8 @@ function seedData(db) {
   console.log('  - 5 reports created');
   console.log('  - 9 report members created');
   console.log('  - 3 reviews created');
-  console.log('  - 3 cases created');
-  console.log('  - 3 standards created');
+  console.log('  - 3 cases created (with sample files)');
+  console.log('  - 3 standards created (with sample files)');
 }
 
 if (require.main === module) {
