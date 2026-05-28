@@ -11,7 +11,85 @@ const DOCUMENT_SERVER_URL = process.env.ONLYOFFICE_URL || 'http://localhost:8080
 // 当前系统对外可访问的地址（OnlyOffice 回调用）
 const CALLBACK_BASE_URL = process.env.CALLBACK_BASE_URL || 'http://localhost:4000';
 
-// 所有路由需要认证
+// ========== 公开路由（无需认证） ==========
+
+/**
+ * GET /api/onlyoffice/test-doc
+ * 提供测试文档（用于验证 OnlyOffice 连接）
+ */
+router.get('/test-doc', (req, res) => {
+  const testDocPath = path.join(__dirname, '..', 'uploads', 'onlyoffice', 'test.docx');
+  
+  if (fs.existsSync(testDocPath)) {
+    return res.sendFile(path.resolve(testDocPath));
+  }
+
+  generateTestDocx(testDocPath).then(() => {
+    res.sendFile(path.resolve(testDocPath));
+  }).catch(err => {
+    console.error('Generate test docx error:', err);
+    res.status(500).json({ success: false, error: '生成测试文档失败' });
+  });
+});
+
+/**
+ * GET /api/onlyoffice/document/:reportId
+ * 提供文档文件给 OnlyOffice Document Server 下载（无需认证）
+ */
+router.get('/document/:reportId', (req, res) => {
+  try {
+    const { reportId } = req.params;
+    const db = getDatabase();
+
+    const report = db.prepare('SELECT * FROM reports WHERE id = ?').get(reportId);
+    if (!report) {
+      return res.status(404).json({ success: false, error: '报告不存在' });
+    }
+
+    const docPath = getDocPath(report);
+
+    if (fs.existsSync(docPath)) {
+      return res.sendFile(path.resolve(docPath));
+    }
+
+    generateInitialDocx(report, docPath).then(() => {
+      res.sendFile(path.resolve(docPath));
+    }).catch(err => {
+      console.error('Generate initial docx error:', err);
+      res.status(500).json({ success: false, error: '生成文档失败' });
+    });
+  } catch (err) {
+    console.error('Serve document error:', err);
+    res.status(500).json({ success: false, error: '获取文档失败' });
+  }
+});
+
+/**
+ * POST /api/onlyoffice/callback
+ * OnlyOffice 编辑器回调接口（无需认证）
+ */
+router.post('/callback', (req, res) => {
+  try {
+    const { status, url, key } = req.body;
+
+    console.log('OnlyOffice callback:', { status, key });
+
+    if ((status === 2 || status === 6) && url) {
+      const match = key.match(/^report_(\d+)_/);
+      if (match) {
+        const reportId = match[1];
+        downloadAndUpdateDoc(reportId, url);
+      }
+    }
+
+    res.json({ error: 0 });
+  } catch (err) {
+    console.error('OnlyOffice callback error:', err);
+    res.json({ error: 0 });
+  }
+});
+
+// ========== 需要认证的路由 ==========
 router.use(authMiddleware);
 
 /**
@@ -21,6 +99,38 @@ router.use(authMiddleware);
 router.get('/config/:reportId', (req, res) => {
   try {
     const { reportId } = req.params;
+    
+    // 测试文档配置
+    if (reportId === 'test') {
+      const testConfig = {
+        document: {
+          fileType: 'docx',
+          key: 'test-' + Date.now(),
+          title: '测试文档.docx',
+          url: `${CALLBACK_BASE_URL}/api/onlyoffice/test-doc`,
+          permissions: { comment: true, download: true, edit: true, fillForms: true, print: true, review: true }
+        },
+        documentType: 'word',
+        editorConfig: {
+          callbackUrl: `${CALLBACK_BASE_URL}/api/onlyoffice/callback`,
+          user: { id: 'test', name: '测试用户' },
+          customization: { autosave: true, chat: false, forcesave: true },
+          lang: 'zh-CN',
+          mode: 'edit'
+        },
+        height: '100%',
+        width: '100%'
+      };
+      return res.json({
+        success: true,
+        data: {
+          config: testConfig,
+          documentServerUrl: DOCUMENT_SERVER_URL,
+          report: { id: 'test', name: '测试文档', status: 'draft', type: 'test' }
+        }
+      });
+    }
+
     const db = getDatabase();
 
     const report = db.prepare(`
@@ -34,7 +144,7 @@ router.get('/config/:reportId', (req, res) => {
       return res.status(404).json({ success: false, error: '报告不存在' });
     }
 
-    const docUrl = `${CALLBACK_BASE_URL}/api/onlyoffice/document/${reportId}?token=${encodeURIComponent(req.headers.authorization?.replace('Bearer ', '') || '')}`;
+    const docUrl = `${CALLBACK_BASE_URL}/api/onlyoffice/document/${reportId}`;
     const docKey = `report_${reportId}_${report.updated_at ? new Date(report.updated_at).getTime() : Date.now()}`;
 
     const canEdit = report.status === 'draft' || report.status === 'revise';
@@ -99,67 +209,8 @@ router.get('/config/:reportId', (req, res) => {
 });
 
 /**
- * GET /api/onlyoffice/document/:reportId
- * 提供文档文件给 OnlyOffice Document Server 下载
- */
-router.get('/document/:reportId', (req, res) => {
-  try {
-    const { reportId } = req.params;
-    const db = getDatabase();
-
-    const report = db.prepare('SELECT * FROM reports WHERE id = ?').get(reportId);
-    if (!report) {
-      return res.status(404).json({ success: false, error: '报告不存在' });
-    }
-
-    const docPath = getDocPath(report);
-
-    if (fs.existsSync(docPath)) {
-      return res.sendFile(path.resolve(docPath));
-    }
-
-    // 文档不存在时生成初始 .docx
-    generateInitialDocx(report, docPath).then(() => {
-      res.sendFile(path.resolve(docPath));
-    }).catch(err => {
-      console.error('Generate initial docx error:', err);
-      res.status(500).json({ success: false, error: '生成文档失败' });
-    });
-  } catch (err) {
-    console.error('Serve document error:', err);
-    res.status(500).json({ success: false, error: '获取文档失败' });
-  }
-});
-
-/**
- * POST /api/onlyoffice/callback
- * OnlyOffice 编辑器回调接口
- */
-router.post('/callback', (req, res) => {
-  try {
-    const { status, url, key } = req.body;
-
-    console.log('OnlyOffice callback:', { status, key });
-
-    // status: 2=已保存准备关闭, 6=强制保存完成
-    if ((status === 2 || status === 6) && url) {
-      const match = key.match(/^report_(\d+)_/);
-      if (match) {
-        const reportId = match[1];
-        downloadAndUpdateDoc(reportId, url);
-      }
-    }
-
-    res.json({ error: 0 });
-  } catch (err) {
-    console.error('OnlyOffice callback error:', err);
-    res.json({ error: 0 });
-  }
-});
-
-/**
  * GET /api/onlyoffice/status
- * 检查 OnlyOffice Document Server 状态
+ * 检查 OnlyOffice Document Server 状态（需要认证）
  */
 router.get('/status', async (req, res) => {
   try {
@@ -186,26 +237,6 @@ router.get('/status', async (req, res) => {
       }
     });
   }
-});
-
-/**
- * GET /api/onlyoffice/test-doc
- * 提供测试文档（用于验证 OnlyOffice 连接）
- */
-router.get('/test-doc', (req, res) => {
-  const testDocPath = path.join(__dirname, '..', 'uploads', 'onlyoffice', 'test.docx');
-  
-  if (fs.existsSync(testDocPath)) {
-    return res.sendFile(path.resolve(testDocPath));
-  }
-
-  // 生成测试文档
-  generateTestDocx(testDocPath).then(() => {
-    res.sendFile(path.resolve(testDocPath));
-  }).catch(err => {
-    console.error('Generate test docx error:', err);
-    res.status(500).json({ success: false, error: '生成测试文档失败' });
-  });
 });
 
 // ========== 辅助函数 ==========

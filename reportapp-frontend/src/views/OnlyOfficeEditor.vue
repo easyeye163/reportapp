@@ -101,15 +101,9 @@ const checkStatus = async () => {
 }
 
 const loadEditor = async () => {
-  const reportId = route.query.id
-  if (!reportId) {
-    ElMessage.error('缺少报告ID')
-    router.back()
-    return
-  }
+  const reportId = route.query.id || 'test'
 
   try {
-    // 获取编辑器配置
     const res: any = await request.get(`/onlyoffice/config/${reportId}`)
     const { config, documentServerUrl, report } = res.data
 
@@ -120,13 +114,9 @@ const loadEditor = async () => {
       return
     }
 
-    // 动态加载 OnlyOffice API 脚本
     await loadScript(`${documentServerUrl}/web-apps/apps/api/documents/api.js`)
-
-    // 等待 DOM 更新
     await nextTick()
 
-    // 初始化编辑器
     // @ts-ignore
     docEditor = new DocsAPI.DocEditor('onlyoffice-editor-container', {
       ...config,
@@ -138,16 +128,13 @@ const loadEditor = async () => {
         onError: (event: any) => {
           console.error('OnlyOffice error:', event)
           ElMessage.error('文档编辑器加载失败')
-        },
-        onSave: (event: any) => {
-          console.log('Document saved:', event)
+          loading.value = false
         }
       }
     })
   } catch (err: any) {
     console.error('Load editor error:', err)
     loading.value = false
-    // 如果是配置获取失败（后端未部署 onlyoffice 路由），显示降级
     if (err?.response?.status === 404) {
       onlyofficeStatus.value = 'offline'
     }

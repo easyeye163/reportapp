@@ -94,11 +94,11 @@ async function start() {
     res.status(404).json({ success: false, error: '接口不存在' });
   });
 
-  const server = app.listen(PORT, () => {
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log('========================================');
     console.log('  福建港航船舶报告编制系统 API Server');
-    console.log(`  Running on: http://localhost:${PORT}`);
-    console.log('  API Base:   http://localhost:4000/api');
+    console.log(`  Running on: http://0.0.0.0:${PORT}`);
+    console.log('  API Base:   http://0.0.0.0:4000/api');
     console.log('========================================');
   });
 
