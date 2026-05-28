@@ -18,7 +18,19 @@ const storage = multer.diskStorage({
     cb(null, `${Date.now()}-${Math.random().toString(36).substr(2, 9)}${ext}`);
   }
 });
-const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
+const upload = multer({
+  storage,
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowedExts = ['.doc', '.docx', '.pdf', '.xls', '.xlsx', '.ppt', '.pptx', '.wps', '.dot', '.dotx'];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowedExts.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`不支持的文件格式: ${ext}。允许格式: ${allowedExts.join(', ')}`));
+    }
+  }
+});
 
 // All routes require auth
 router.use(authMiddleware);

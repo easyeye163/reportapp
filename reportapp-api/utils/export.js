@@ -3,18 +3,46 @@ const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } = re
 const fs = require('fs');
 const path = require('path');
 
-const REPORT_TYPE_NAMES = {
-  ship: '船舶勘验报告',
-  water: '水土保持监测报告',
-  port: '港口工程报告',
-  ocean: '海洋环境影响评价报告',
-  channel: '航道通航条件影响评价报告'
-};
+// 下载并缓存 NotoSansSC 字体（首次调用时自动下载）
+let _cachedFontPath = null;
+const FONT_DIR = path.join(__dirname, '..', 'uploads', 'fonts');
+const FONT_URL = 'https://github.com/googlefonts/noto-cjk/raw/main/Sans/OTF/SimplifiedChinese/NotoSansSC-Regular.otf';
+const FONT_FILE = path.join(FONT_DIR, 'NotoSansSC-Regular.otf');
 
-function getChineseFontPath() {
-  // Windows 字体路径
-  const windowsFonts = 'C:/Windows/Fonts';
-  // Linux 常见中文字体路径
+function ensureChineseFont() {
+  if (_cachedFontPath && fs.existsSync(_cachedFontPath)) return _cachedFontPath;
+
+  if (fs.existsSync(FONT_FILE)) {
+    _cachedFontPath = FONT_FILE;
+    return _cachedFontPath;
+  }
+
+  // 尝试系统字体
+  const systemFont = findSystemChineseFont();
+  if (systemFont) {
+    _cachedFontPath = systemFont;
+    return _cachedFontPath;
+  }
+
+  // 没有找到任何字体，尝试下载
+  try {
+    if (!fs.existsSync(FONT_DIR)) fs.mkdirSync(FONT_DIR, { recursive: true });
+    console.log('Downloading Chinese font for PDF generation...');
+    const { execSync } = require('child_process');
+    execSync(`curl -sL -o "${FONT_FILE}" "${FONT_URL}"`, { timeout: 60000 });
+    if (fs.existsSync(FONT_FILE) && fs.statSync(FONT_FILE).size > 1000000) {
+      _cachedFontPath = FONT_FILE;
+      console.log('Chinese font downloaded successfully.');
+      return _cachedFontPath;
+    }
+  } catch (e) {
+    console.warn('Failed to download Chinese font:', e.message);
+  }
+
+  return null;
+}
+
+function findSystemChineseFont() {
   const linuxFontDirs = [
     '/usr/share/fonts',
     '/usr/share/fonts/truetype',
@@ -24,17 +52,16 @@ function getChineseFontPath() {
   ];
 
   const fontCandidates = [
-    // Windows
-    { dir: windowsFonts, names: ['simhei.ttf', 'NotoSansSC-VF.ttf', 'NotoSerifSC-VF.ttf', 'simkai.ttf', 'simsunb.ttf', 'msyh.ttc'] },
-    // Linux
+    { dir: 'C:/Windows/Fonts', names: ['simhei.ttf', 'msyh.ttc', 'simsunb.ttf'] },
     ...linuxFontDirs.map(d => ({
       dir: d,
       names: [
         'noto/NotoSansSC-Regular.ttf',
         'NotoSansSC-Regular.ttf',
+        'NotoSansSC-Regular.otf',
         'NotoSansSC-VF.ttf',
         'truetype/noto/NotoSansSC-Regular.ttf',
-        'opentype/noto/NotoSansSC-Regular.ttf',
+        'opentype/noto/NotoSansSC-Regular.otf',
         'wqy/wqy-zenhei.ttc',
         'wqy/wqy-microhei.ttc',
         'droid/DroidSansFallbackFull.ttf',
@@ -48,31 +75,33 @@ function getChineseFontPath() {
   for (const candidate of fontCandidates) {
     for (const font of candidate.names) {
       const fontPath = path.join(candidate.dir, font);
-      if (fs.existsSync(fontPath)) {
-        return fontPath;
-      }
+      if (fs.existsSync(fontPath)) return fontPath;
     }
   }
 
-  // 尝试递归搜索 Linux 字体目录
   for (const fontDir of linuxFontDirs) {
     if (!fs.existsSync(fontDir)) continue;
     try {
       const files = fs.readdirSync(fontDir, { withFileTypes: true });
       for (const file of files) {
         if (file.isFile() && /\.(ttf|ttc|otf)$/i.test(file.name)) {
-          const fullPath = path.join(fontDir, file.name);
-          // 简单判断文件名是否包含中文相关关键词
           if (/noto.*sc|simhei|simsun|msyh|wqy|droid|arphic|cjk|chinese/i.test(file.name)) {
-            return fullPath;
+            return path.join(fontDir, file.name);
           }
         }
       }
-    } catch (e) { /* ignore permission errors */ }
+    } catch (e) { /* ignore */ }
   }
-
   return null;
 }
+
+const REPORT_TYPE_NAMES = {
+  ship: '船舶勘验报告',
+  water: '水土保持监测报告',
+  port: '港口工程报告',
+  ocean: '海洋环境影响评价报告',
+  channel: '航道通航条件影响评价报告'
+};
 
 function generatePDF(reportData, options = {}) {
   const { watermark = false } = options;
@@ -81,7 +110,7 @@ function generatePDF(reportData, options = {}) {
 
   doc.on('data', chunk => chunks.push(chunk));
 
-  const chineseFont = getChineseFontPath();
+  const chineseFont = ensureChineseFont();
   let hasChineseFont = false;
   if (chineseFont) {
     try {
@@ -92,7 +121,7 @@ function generatePDF(reportData, options = {}) {
       console.warn('Failed to register Chinese font:', e.message);
     }
   } else {
-    console.warn('No Chinese font found. PDF may not display Chinese characters correctly. Install fonts: apt-get install fonts-noto-cjk');
+    console.warn('No Chinese font available. PDF will use fallback encoding.');
   }
 
   const content = reportData.content || {};

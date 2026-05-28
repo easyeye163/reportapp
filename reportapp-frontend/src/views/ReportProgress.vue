@@ -45,25 +45,26 @@
     <div class="progress-list">
       <el-card>
         <el-table :data="reports" style="width: 100%">
-          <el-table-column prop="name" label="报告名称" min-width="180" />
-          <el-table-column prop="code" label="报告编号" width="140" />
-          <el-table-column prop="type" label="报告类型" width="140">
+          <el-table-column prop="name" label="报告名称" min-width="180" sortable />
+          <el-table-column prop="code" label="报告编号" width="140" sortable />
+          <el-table-column prop="type" label="报告类型" width="140" sortable :sort-method="(a, b) => a.type.localeCompare(b.type)">
             <template #default="scope"><el-tag :type="getTagType(scope.row.type)">{{ getTypeName(scope.row.type) }}</el-tag></template>
           </el-table-column>
           <el-table-column prop="creator_name" label="编制人" width="100" />
-          <el-table-column prop="created_at" label="创建时间" width="140" />
-          <el-table-column prop="status" label="状态" width="90">
+          <el-table-column prop="created_at" label="创建时间" width="140" sortable />
+          <el-table-column prop="status" label="状态" width="90" sortable :sort-method="(a, b) => a.status.localeCompare(b.status)">
             <template #default="scope"><el-tag :type="getStatusType(scope.row.status)">{{ getStatusText(scope.row.status) }}</el-tag></template>
           </el-table-column>
-          <el-table-column label="进度" min-width="150">
+          <el-table-column label="进度" min-width="150" sortable :sort-method="(a, b) => getProgress(a) - getProgress(b)">
             <template #default="scope">
               <el-progress :percentage="getProgress(scope.row)" :color="getProgressColor(getProgress(scope.row))" :status="getProgress(scope.row) >= 100 ? 'success' : ''" />
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="240" fixed="right">
+          <el-table-column label="操作" width="320" fixed="right">
             <template #default="scope">
               <el-button size="small" @click="viewReport(scope.row)"><el-icon><View /></el-icon>查看</el-button>
               <el-button size="small" type="primary" @click="editReport(scope.row)" :disabled="scope.row.status !== 'draft' && scope.row.status !== 'revise'"><el-icon><Edit /></el-icon>编辑</el-button>
+              <el-button size="small" type="success" @click="exportReport(scope.row)"><el-icon><Download /></el-icon>导出</el-button>
               <el-button size="small" type="danger" @click="deleteReport(scope.row)" :disabled="!isAdmin && scope.row.status !== 'draft'"><el-icon><Delete /></el-icon>删除</el-button>
           </template>
           </el-table-column>
@@ -104,15 +105,36 @@
         <el-button type="primary" :loading="creating" @click="submitCreate">创建</el-button>
       </template>
     </el-dialog>
+    <!-- 导出报告弹窗 -->
+    <el-dialog v-model="exportModalVisible" title="导出设置" width="500px">
+      <el-form :model="exportForm" label-width="100px">
+        <el-form-item label="导出格式">
+          <el-radio-group v-model="exportForm.format">
+            <el-radio label="docx">Word (DOCX)</el-radio>
+            <el-radio label="pdf">PDF</el-radio>
+            <el-radio label="html">HTML</el-radio>
+            <el-radio label="json">JSON</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="报告水印">
+          <el-switch v-model="exportForm.watermark" />
+          <el-input v-if="exportForm.watermark" v-model="exportForm.watermarkText" placeholder="输入水印文本" style="margin-top: 8px" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="exportModalVisible = false">取消</el-button>
+        <el-button type="primary" :loading="exporting" @click="confirmExport">确认导出</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Plus, Refresh, Search, Filter, View, Edit, Delete } from '@element-plus/icons-vue'
+import { Plus, Refresh, Search, Filter, View, Edit, Delete, Download } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getReports, createReport, deleteReport as apiDeleteReport } from '../api/reports'
+import { getReports, createReport, deleteReport as apiDeleteReport, exportReport as apiExportReport } from '../api/reports'
 import { getFrames } from '../api/frames'
 
 const router = useRouter()
@@ -133,6 +155,12 @@ const createModalVisible = ref(false)
 const creating = ref(false)
 const createForm = ref({ name: '', type: 'ship', frame_id: '', description: '' })
 const availableFrames = ref<any[]>([])
+
+// 导出相关
+const exportModalVisible = ref(false)
+const exporting = ref(false)
+const currentExportReport = ref<any>(null)
+const exportForm = ref({ format: 'docx', watermark: false, watermarkText: '福建港航船舶报告' })
 
 const draftReports = computed(() => reports.value.filter(r => r.status === 'draft').length)
 const pendingReports = computed(() => reports.value.filter(r => r.status === 'pending').length)
@@ -193,6 +221,53 @@ const submitCreate = async () => {
 
 const viewReport = (report: any) => { router.push({ path: '/report-edit', query: { id: String(report.id), mode: 'view' } }) }
 const editReport = (report: any) => { router.push({ path: '/report-edit', query: { id: String(report.id) } }) }
+
+const exportReport = (report: any) => {
+  currentExportReport.value = report
+  exportModalVisible.value = true
+}
+
+const confirmExport = async () => {
+  if (!currentExportReport.value) return
+  exporting.value = true
+  try {
+    const params = {
+      format: exportForm.value.format,
+      watermark: exportForm.value.watermark ? 'true' : 'false',
+      watermarkText: exportForm.value.watermarkText
+    }
+    const res: any = await apiExportReport(currentExportReport.value.id, params)
+
+    if (exportForm.value.format === 'json') {
+      const blob = new Blob([JSON.stringify(res.data)], { type: 'application/json' })
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${currentExportReport.value.code || currentExportReport.value.name}.json`
+      link.click()
+      window.URL.revokeObjectURL(url)
+    } else {
+      const blob = new Blob([res], {
+        type: exportForm.value.format === 'pdf'
+          ? 'application/pdf'
+          : exportForm.value.format === 'docx'
+            ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            : 'text/html'
+      })
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${currentExportReport.value.code || currentExportReport.value.name}.${exportForm.value.format}`
+      link.click()
+      window.URL.revokeObjectURL(url)
+    }
+
+    ElMessage.success('报告导出成功')
+    exportModalVisible.value = false
+  } catch (e) {
+    ElMessage.error('报告导出失败')
+  } finally { exporting.value = false }
+}
 
 const deleteReport = (report: any) => {
   if (!report || !report.id) {

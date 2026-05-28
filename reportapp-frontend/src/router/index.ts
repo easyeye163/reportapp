@@ -78,11 +78,6 @@ const router = createRouter({
       path: '/frame-edit',
       name: 'frame-edit',
       component: () => import('../views/FrameEdit.vue')
-    },
-    {
-      path: '/doc-editor',
-      name: 'doc-editor',
-      component: () => import('../views/OnlyOfficeEditor.vue')
     }
   ]
 })

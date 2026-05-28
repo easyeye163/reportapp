@@ -24,6 +24,64 @@ const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
 // All user routes require auth
 router.use(authMiddleware);
 
+// ===== 角色路由必须在 /:id 之前，避免 Express 将 'roles' 匹配为 /:id =====
+
+// GET /api/roles
+router.get('/roles', (req, res) => {
+  try {
+    const db = getDatabase();
+    const roles = db.prepare('SELECT * FROM roles ORDER BY id').all().map(r => ({
+      ...r,
+      permissions: JSON.parse(r.permissions)
+    }));
+    res.json({ success: true, data: roles });
+  } catch (err) {
+    console.error('Get roles error:', err);
+    res.status(500).json({ success: false, error: '获取角色列表失败' });
+  }
+});
+
+// PUT /api/roles/:id — update role permissions (admin only)
+router.put('/roles/:id', adminOnly, (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description, permissions } = req.body;
+    const db = getDatabase();
+
+    const role = db.prepare('SELECT * FROM roles WHERE id = ?').get(id);
+    if (!role) {
+      return res.status(404).json({ success: false, error: '角色不存在' });
+    }
+
+    const updates = [];
+    const values = [];
+
+    if (name) { updates.push('name = ?'); values.push(name); }
+    if (description !== undefined) { updates.push('description = ?'); values.push(description); }
+    if (permissions) {
+      updates.push('permissions = ?');
+      values.push(JSON.stringify(permissions));
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ success: false, error: '没有需要更新的字段' });
+    }
+
+    values.push(id);
+    db.prepare(`UPDATE roles SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+
+    const updatedRole = db.prepare('SELECT * FROM roles WHERE id = ?').get(id);
+    updatedRole.permissions = JSON.parse(updatedRole.permissions);
+
+    res.json({ success: true, data: updatedRole, message: '角色更新成功' });
+  } catch (err) {
+    console.error('Update role error:', err);
+    res.status(500).json({ success: false, error: '更新角色失败' });
+  }
+});
+
+// ===== 用户 CRUD 路由 =====
+
 // GET /api/users — list with pagination + search + filter
 router.get('/', (req, res) => {
   try {
@@ -196,60 +254,6 @@ router.delete('/:id', adminOnly, (req, res) => {
   } catch (err) {
     console.error('Delete user error:', err);
     res.status(500).json({ success: false, error: '删除用户失败' });
-  }
-});
-
-// GET /api/roles
-router.get('/roles', (req, res) => {
-  try {
-    const db = getDatabase();
-    const roles = db.prepare('SELECT * FROM roles ORDER BY id').all().map(r => ({
-      ...r,
-      permissions: JSON.parse(r.permissions)
-    }));
-    res.json({ success: true, data: roles });
-  } catch (err) {
-    console.error('Get roles error:', err);
-    res.status(500).json({ success: false, error: '获取角色列表失败' });
-  }
-});
-
-// PUT /api/roles/:id — update role permissions (admin only)
-router.put('/roles/:id', adminOnly, (req, res) => {
-  try {
-    const { id } = req.params;
-    const { name, description, permissions } = req.body;
-    const db = getDatabase();
-
-    const role = db.prepare('SELECT * FROM roles WHERE id = ?').get(id);
-    if (!role) {
-      return res.status(404).json({ success: false, error: '角色不存在' });
-    }
-
-    const updates = [];
-    const values = [];
-
-    if (name) { updates.push('name = ?'); values.push(name); }
-    if (description !== undefined) { updates.push('description = ?'); values.push(description); }
-    if (permissions) {
-      updates.push('permissions = ?');
-      values.push(JSON.stringify(permissions));
-    }
-
-    if (updates.length === 0) {
-      return res.status(400).json({ success: false, error: '没有需要更新的字段' });
-    }
-
-    values.push(id);
-    db.prepare(`UPDATE roles SET ${updates.join(', ')} WHERE id = ?`).run(...values);
-
-    const updatedRole = db.prepare('SELECT * FROM roles WHERE id = ?').get(id);
-    updatedRole.permissions = JSON.parse(updatedRole.permissions);
-
-    res.json({ success: true, data: updatedRole, message: '角色更新成功' });
-  } catch (err) {
-    console.error('Update role error:', err);
-    res.status(500).json({ success: false, error: '更新角色失败' });
   }
 });
 
